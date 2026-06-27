@@ -16,15 +16,33 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useClients, type ClientTreeNode } from "@/hooks/queries";
+import { useClients, useOverview, type ClientTreeNode } from "@/hooks/queries";
 import { useWorkspace } from "@/stores/workspace";
 import { CreateClientDialog } from "@/components/clients/create-client-dialog";
 import { CreateProjectDialog } from "@/components/projects/create-project-dialog";
 import { Logo } from "@/components/brand/logo";
+import { StatusDot } from "@/components/sessions/status-dot";
+import type { AgentSessionStatus } from "@/lib/db/schema";
+
+const STATUS_RANK: Record<AgentSessionStatus, number> = {
+  needs_attention: 3,
+  working: 2,
+  idle: 1,
+  offline: 0,
+};
 
 export function Sidebar() {
   const { data: clients, isLoading } = useClients();
+  const { data: overview } = useOverview();
   const pathname = usePathname();
+
+  const statusByClient = new Map<string, AgentSessionStatus>();
+  overview?.sessions.forEach((s) => {
+    const cur = statusByClient.get(s.clientId);
+    if (!cur || STATUS_RANK[s.status] > STATUS_RANK[cur]) {
+      statusByClient.set(s.clientId, s.status);
+    }
+  });
 
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
@@ -75,6 +93,7 @@ export function Sidebar() {
                 key={client.id}
                 client={client}
                 pathname={pathname}
+                sessionStatus={statusByClient.get(client.id) ?? null}
               />
             ))}
           </ul>
@@ -96,9 +115,11 @@ export function Sidebar() {
 function ClientNode({
   client,
   pathname,
+  sessionStatus,
 }: {
   client: ClientTreeNode;
   pathname: string;
+  sessionStatus: AgentSessionStatus | null;
 }) {
   const activeProjectId = useWorkspace((s) => s.activeProjectId);
   const setActiveClient = useWorkspace((s) => s.setActiveClient);
@@ -125,10 +146,14 @@ function ClientNode({
           ) : (
             <ChevronRight className="size-3.5 text-muted-foreground" />
           )}
-          <span
-            className="size-2 shrink-0 rounded-full"
-            style={{ backgroundColor: client.color ?? "var(--primary)" }}
-          />
+          {sessionStatus ? (
+            <StatusDot status={sessionStatus} className="shrink-0" />
+          ) : (
+            <span
+              className="size-2 shrink-0 rounded-full"
+              style={{ backgroundColor: client.color ?? "var(--primary)" }}
+            />
+          )}
           <span className="truncate">{client.name}</span>
         </button>
         <CreateProjectDialog

@@ -69,7 +69,7 @@ npm run dev                     # http://localhost:3000
 ## 🗺️ Roadmap
 
 - [x] **Phase 1** — Foundation: auth, schema, client/project/agent CRUD, Kanban
-- [ ] **Phase 2** — Single-agent streaming chat (SSE)
+- [x] **Phase 2** — Single-agent streaming chat (SSE)
 - [ ] **Phase 3** — Multi-agent orchestration + trace view
 - [ ] **Phase 4** — Dashboard polish, more providers, deploy
 

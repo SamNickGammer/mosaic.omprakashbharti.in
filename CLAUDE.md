@@ -24,6 +24,7 @@ from one interface. Sending a task runs a **primary agent → secondary reviewer
 | Styling | **Tailwind CSS v4** | tokens in `app/globals.css` `@theme inline`; **no `tailwind.config.ts`** |
 | UI | **shadcn/ui on `@base-ui/react`** | NOT Radix. Composition uses `render={<El/>}`, not `asChild` |
 | Icons | `lucide-react` | |
+| Markdown | `react-markdown` + `remark-gfm` | agent/assistant output rendered rich (`components/markdown.tsx`); Tailwind-styled, no typography plugin |
 | Server state | `@tanstack/react-query` | hooks in `hooks/queries.ts` |
 | Client state | `zustand` | `stores/workspace.ts` (active client/project) |
 | DB | Neon (serverless Postgres) | |
@@ -116,6 +117,10 @@ DATABASE_URL=... npx drizzle-kit studio      # DB GUI
 drizzle-kit does not auto-load `.env.local`; prefix with the var or
 `set -a; . ./.env.local; set +a` first.
 
+If you hit `Cannot find module './vendor-chunks/*.js'` in dev, the `.next` cache
+is stale (usually from interleaving `next build` and `next dev`). Fix: stop the
+dev server, `rm -rf .next`, restart.
+
 ---
 
 ## Git / committing
@@ -140,9 +145,67 @@ drizzle-kit does not auto-load `.env.local`; prefix with the var or
 - Kanban board with @dnd-kit (drag between Backlog/In Progress/Review/Done).
 - Task detail page with Phase-2 chat placeholder.
 
-**Next — Phase 2 (single-agent streaming chat):** SSE endpoint at
-`/api/tasks/[taskId]/chat`, chat UI, project context injection, one Claude agent.
-Then **Phase 3** multi-agent orchestration (`lib/orchestrator/`).
+**Phase 2 — Single-agent streaming chat: ✅ complete & building.**
+- `lib/orchestrator/` — `loadPrimaryAgent` (decrypts per-agent key), `buildSystemPrompt`
+  (injects project context), `providers/anthropic.ts` (Vercel AI SDK).
+- `POST /api/tasks/[taskId]/chat` — SSE (named events per ARCHITECTURE.md:
+  `primary_start` → `primary_stream` → `primary_done` → `done`, plus `error`).
+  Node runtime; saves user + assistant rows to `task_messages`.
+- `GET /api/tasks/[taskId]/messages` — chat history (excludes traces).
+- `components/chat/task-chat.tsx` — streaming chat UI in the task detail right panel.
+- ⚠️ Gotcha: AI SDK v7 `result.textStream` **swallows** provider errors (ends
+  empty). Consume `result.fullStream` and handle `text-delta` (`.text`) and
+  `error` (`.error`) parts — that's how the route surfaces failures as SSE `error`.
+- Note: all task API routes use the `[taskId]` slug (Next forbids mixing `[id]`/
+  `[taskId]` at the same path).
+
+**Agent Sessions & Webhook Protocol (PRD v2 Phase 2): ✅ complete & building, e2e-verified.**
+Live AI sessions (Claude Code / Codex) connect to a project via a 40-char bearer
+token and run a long-poll work loop. This supersedes the direct-call chat on the
+task page (the legacy `/api/tasks/[taskId]/chat` + `components/chat/task-chat.tsx`
+remain for quick one-off agent-account calls).
+
+- Schema: `agent_sessions`, `task_attachments`, `session_messages`; `tasks` gained
+  `claimed_by_session_id` / `attention_message` / `result`; `task_messages` gained
+  `session_id` / `is_stream_chunk` (and `role` now doubles as author kind, with
+  `"agent"`/`"system"` added — exposed as `authorKind` in session APIs).
+- Webhook routes (token-auth only, no NextAuth) under `app/api/sessions/[token]/`:
+  `next` (long-poll claim), `heartbeat`, `chat`(+`/poll`), and
+  `tasks/[taskId]/{stream,comments,attention,poll,resume,complete}`. Long-poll =
+  2s DB poll up to 90s (`lib/session-auth.ts`).
+- Browser routes (NextAuth + ownership via `getOwnedSession`/`getOwnedProject`):
+  `GET/POST /api/projects/[id]/sessions` (create returns token + bootstrap once),
+  `DELETE /api/sessions/[token]` (param is a session *id* here — revoke nulls the
+  token), `POST /api/tasks/[id]/messages` (user reply), `GET /api/tasks/[id]/stream`
+  (SSE), `/api/sessions-chat/[sessionId]` (direct-chat wrapper), `/api/overview`.
+- SSE: in-memory pub/sub keyed by taskId (`lib/sse/broadcast.ts`, on globalThis).
+  Events: `chunk` / `attention` / `complete` / `status` (named events, per
+  ARCHITECTURE_NEW.md). Browser uses `EventSource`. Single-instance only —
+  KV/LISTEN-NOTIFY deferred to Phase 4.
+- Cron: `vercel.json` → `/api/cron/session-health` every 2 min, marks sessions
+  offline after 5 min (auth `Bearer ${CRON_SECRET}`).
+- UI: sessions page + New Session modal (bootstrap prompt + copy), task workspace
+  with live streamed output / attention + complete banners / user replies, direct
+  session chat page, dashboard attention cards + active-session stat, sidebar +
+  topbar session status dots. Session statuses in `lib/session-meta.ts`.
+- ⚠️ CRITICAL: the neon client is created with `fetchOptions: { cache: "no-store" }`
+  (`lib/db/index.ts`). Next.js patches global `fetch` and will cache the neon-http
+  driver's responses — without no-store, long-polls (`/next`, `/poll`,
+  `/chat/poll`) re-run the same query and keep getting their first stale result,
+  so new tasks/comments are never seen and revoked tokens still appear valid.
+  Never remove this.
+- Re-queue on reply: `POST /api/tasks/[id]/messages` re-queues the task
+  (status→in_progress, claimed→null, attention cleared) **unless** a live session
+  is actively working it. `/next` then re-claims with the follow-up `comments[]`
+  and the `previousResult`. This is why chatting on a *done* task gets a response.
+- Slug note: everything under `/api/sessions/*` shares the `[token]` segment name
+  (Next requires one slug per path); the browser DELETE reuses it as a session id.
+- Deferred (needs `@vercel/blob`, will ask first): actual attachment **upload**.
+  The `task_attachments` table + `files` in `/next` + UI display are wired.
+- New env: `CRON_SECRET`, `BLOB_READ_WRITE_TOKEN` (see `.env.example`).
+
+**Next — Phase 3** integrations (GitHub/Slack per client), plus the older
+multi-agent orchestration (primary → secondary → merge) and `orchestration_traces`.
 
 One deviation from the PRD data model: `users.image` was added to store the
 Google avatar (used in the user menu). Everything else matches `docs/PRD.md` §8.

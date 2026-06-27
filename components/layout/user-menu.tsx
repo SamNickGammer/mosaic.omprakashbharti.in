@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -47,14 +48,18 @@ export function UserMenu({ user }: UserMenuProps) {
         }
       />
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="flex flex-col">
-          <span className="truncate font-medium">{user.name ?? "Account"}</span>
-          {user.email ? (
-            <span className="truncate text-xs font-normal text-muted-foreground">
-              {user.email}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="flex flex-col">
+            <span className="truncate font-medium">
+              {user.name ?? "Account"}
             </span>
-          ) : null}
-        </DropdownMenuLabel>
+            {user.email ? (
+              <span className="truncate text-xs font-normal text-muted-foreground">
+                {user.email}
+              </span>
+            ) : null}
+          </DropdownMenuLabel>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem render={<Link href="/settings/agents" />}>
           <Settings className="size-4" /> Settings

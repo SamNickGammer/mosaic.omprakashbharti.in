@@ -20,11 +20,25 @@ export type AgentProviderId =
 export type ProjectAgentRole = "primary" | "secondary";
 export type TaskStatus = "backlog" | "in_progress" | "review" | "done";
 export type TaskPriority = "low" | "medium" | "high" | "critical";
-export type MessageRole = "user" | "assistant" | "agent_trace";
+// `role` doubles as the author kind on task_messages. "agent" = live session
+// output; "assistant" = legacy direct-call replies; "system" = system notices.
+export type MessageRole =
+  | "user"
+  | "assistant"
+  | "agent"
+  | "agent_trace"
+  | "system";
 export type TraceRole =
   | "primary_analysis"
   | "secondary_review"
   | "final_merge";
+export type AgentSessionType = "claude_code" | "codex" | "copilot" | "custom";
+export type AgentSessionStatus =
+  | "idle"
+  | "working"
+  | "needs_attention"
+  | "offline";
+export type SessionAuthorKind = "user" | "agent";
 
 // ---------------------------------------------------------------------------
 // users
@@ -130,6 +144,15 @@ export const tasks = pgTable("tasks", {
   status: text("status").$type<TaskStatus>().default("backlog").notNull(),
   priority: text("priority").$type<TaskPriority>().default("medium").notNull(),
   position: integer("position").default(0).notNull(),
+  // Set when a live session claims the task (first-come-first-served).
+  claimedBySessionId: uuid("claimed_by_session_id").references(
+    () => agentSessions.id,
+    { onDelete: "set null" },
+  ),
+  // Set when a session raises an attention flag; cleared on resume.
+  attentionMessage: text("attention_message"),
+  // One-line summary set when a session marks the task complete.
+  result: text("result"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -151,6 +174,12 @@ export const taskMessages = pgTable("task_messages", {
   agentId: uuid("agent_id").references(() => agentAccounts.id, {
     onDelete: "set null",
   }),
+  // Set when the message came from / is destined for a live agent session.
+  sessionId: uuid("session_id").references(() => agentSessions.id, {
+    onDelete: "set null",
+  }),
+  // True for streamed session output chunks (vs. discrete comments/messages).
+  isStreamChunk: boolean("is_stream_chunk").default(false).notNull(),
   isTrace: boolean("is_trace").default(false).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
@@ -174,6 +203,64 @@ export const orchestrationTraces = pgTable("orchestration_traces", {
   output: text("output"),
   tokensUsed: integer("tokens_used"),
   durationMs: integer("duration_ms"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// ---------------------------------------------------------------------------
+// agent_sessions (live webhook-connected AI sessions)
+// ---------------------------------------------------------------------------
+export const agentSessions = pgTable("agent_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  agentType: text("agent_type").$type<AgentSessionType>().notNull(),
+  // 40-char random hex bearer token, stored plain (already high-entropy).
+  // Nullable so revoke can null it out (NULLs are exempt from UNIQUE).
+  token: text("token").unique(),
+  tokenPrefix: text("token_prefix").notNull(),
+  status: text("status")
+    .$type<AgentSessionStatus>()
+    .default("offline")
+    .notNull(),
+  currentTaskId: uuid("current_task_id"),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// ---------------------------------------------------------------------------
+// task_attachments (files referenced by a task; stored in Blob — Phase 2+)
+// ---------------------------------------------------------------------------
+export const taskAttachments = pgTable("task_attachments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  taskId: uuid("task_id")
+    .notNull()
+    .references(() => tasks.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  url: text("url").notNull(),
+  mime: text("mime"),
+  sizeBytes: integer("size_bytes"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// ---------------------------------------------------------------------------
+// session_messages (direct chat with a session, outside of tasks)
+// ---------------------------------------------------------------------------
+export const sessionMessages = pgTable("session_messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sessionId: uuid("session_id")
+    .notNull()
+    .references(() => agentSessions.id, { onDelete: "cascade" }),
+  authorKind: text("author_kind").$type<SessionAuthorKind>().notNull(),
+  content: text("content").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -214,6 +301,7 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   }),
   projectAgents: many(projectAgents),
   tasks: many(tasks),
+  sessions: many(agentSessions),
 }));
 
 export const projectAgentsRelations = relations(projectAgents, ({ one }) => ({
@@ -232,8 +320,44 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
     fields: [tasks.projectId],
     references: [projects.id],
   }),
+  claimedBySession: one(agentSessions, {
+    fields: [tasks.claimedBySessionId],
+    references: [agentSessions.id],
+  }),
   messages: many(taskMessages),
+  attachments: many(taskAttachments),
 }));
+
+export const agentSessionsRelations = relations(
+  agentSessions,
+  ({ one, many }) => ({
+    project: one(projects, {
+      fields: [agentSessions.projectId],
+      references: [projects.id],
+    }),
+    messages: many(sessionMessages),
+  }),
+);
+
+export const taskAttachmentsRelations = relations(
+  taskAttachments,
+  ({ one }) => ({
+    task: one(tasks, {
+      fields: [taskAttachments.taskId],
+      references: [tasks.id],
+    }),
+  }),
+);
+
+export const sessionMessagesRelations = relations(
+  sessionMessages,
+  ({ one }) => ({
+    session: one(agentSessions, {
+      fields: [sessionMessages.sessionId],
+      references: [agentSessions.id],
+    }),
+  }),
+);
 
 export const taskMessagesRelations = relations(
   taskMessages,
@@ -275,3 +399,9 @@ export type TaskMessage = typeof taskMessages.$inferSelect;
 export type NewTaskMessage = typeof taskMessages.$inferInsert;
 export type OrchestrationTrace = typeof orchestrationTraces.$inferSelect;
 export type NewOrchestrationTrace = typeof orchestrationTraces.$inferInsert;
+export type AgentSession = typeof agentSessions.$inferSelect;
+export type NewAgentSession = typeof agentSessions.$inferInsert;
+export type TaskAttachment = typeof taskAttachments.$inferSelect;
+export type NewTaskAttachment = typeof taskAttachments.$inferInsert;
+export type SessionMessage = typeof sessionMessages.$inferSelect;
+export type NewSessionMessage = typeof sessionMessages.$inferInsert;

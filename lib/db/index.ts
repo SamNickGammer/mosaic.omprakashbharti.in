@@ -11,7 +11,11 @@ if (!connectionString) {
   );
 }
 
-const sql = neon(connectionString);
+// `cache: "no-store"` is critical: Next.js patches global fetch and will cache
+// the neon-http driver's query responses, returning stale rows (e.g. a long-poll
+// re-running the same query would see its first, now-outdated result). DB reads
+// must never be cached.
+const sql = neon(connectionString, { fetchOptions: { cache: "no-store" } });
 
 export const db = drizzle(sql, { schema });
 

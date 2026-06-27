@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ExternalLink, Plus, Settings2, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { ExternalLink, Plus, Radio, Settings2, Sparkles } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,13 @@ import { useProject } from "@/hooks/queries";
 import { CreateTaskDialog } from "@/components/board/create-task-dialog";
 import { EditProjectDialog } from "@/components/projects/edit-project-dialog";
 
-export function ProjectHeader({ projectId }: { projectId: string }) {
+export function ProjectHeader({
+  clientId,
+  projectId,
+}: {
+  clientId: string;
+  projectId: string;
+}) {
   const { data: project, isLoading } = useProject(projectId);
   const [showContext, setShowContext] = useState(false);
 
@@ -56,6 +63,17 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            render={
+              <Link
+                href={`/clients/${clientId}/projects/${projectId}/sessions`}
+              />
+            }
+          >
+            <Radio className="size-4" /> Sessions
+          </Button>
           <EditProjectDialog
             projectId={projectId}
             trigger={

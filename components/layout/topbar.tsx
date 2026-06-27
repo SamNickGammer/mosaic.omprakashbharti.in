@@ -2,19 +2,20 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronsUpDown, Plus } from "lucide-react";
+import { Check, ChevronsUpDown, Plus, Zap } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { useClients } from "@/hooks/queries";
+import { useClients, useOverview } from "@/hooks/queries";
 import { useWorkspace } from "@/stores/workspace";
 import { CreateClientDialog } from "@/components/clients/create-client-dialog";
 import { UserMenu } from "@/components/layout/user-menu";
@@ -29,8 +30,15 @@ export function Topbar({ user }: TopbarProps) {
   const setActiveClient = useWorkspace((s) => s.setActiveClient);
   const router = useRouter();
 
+  const { data: overview } = useOverview();
   const [createOpen, setCreateOpen] = useState(false);
   const activeClient = clients?.find((c) => c.id === activeClientId) ?? null;
+
+  const activeSessions =
+    overview?.sessions.filter(
+      (s) => s.status === "idle" || s.status === "working",
+    ).length ?? 0;
+  const attentionCount = overview?.attention.length ?? 0;
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b bg-background px-4">
@@ -52,35 +60,37 @@ export function Topbar({ user }: TopbarProps) {
           }
         />
         <DropdownMenuContent align="start" className="w-56">
-          <DropdownMenuLabel>Clients</DropdownMenuLabel>
-          {clients && clients.length > 0 ? (
-            clients.map((c) => (
-              <DropdownMenuItem
-                key={c.id}
-                onClick={() => {
-                  setActiveClient(c.id);
-                  const first = c.projects[0];
-                  if (first) {
-                    router.push(`/clients/${c.id}/projects/${first.id}`);
-                  }
-                }}
-              >
-                <span
-                  className="size-2 rounded-full"
-                  style={{ backgroundColor: c.color ?? "var(--primary)" }}
-                />
-                <span className="flex-1 truncate">{c.name}</span>
-                <Check
-                  className={cn(
-                    "size-4",
-                    activeClientId === c.id ? "opacity-100" : "opacity-0",
-                  )}
-                />
-              </DropdownMenuItem>
-            ))
-          ) : (
-            <DropdownMenuItem disabled>No clients yet</DropdownMenuItem>
-          )}
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Clients</DropdownMenuLabel>
+            {clients && clients.length > 0 ? (
+              clients.map((c) => (
+                <DropdownMenuItem
+                  key={c.id}
+                  onClick={() => {
+                    setActiveClient(c.id);
+                    const first = c.projects[0];
+                    if (first) {
+                      router.push(`/clients/${c.id}/projects/${first.id}`);
+                    }
+                  }}
+                >
+                  <span
+                    className="size-2 rounded-full"
+                    style={{ backgroundColor: c.color ?? "var(--primary)" }}
+                  />
+                  <span className="flex-1 truncate">{c.name}</span>
+                  <Check
+                    className={cn(
+                      "size-4",
+                      activeClientId === c.id ? "opacity-100" : "opacity-0",
+                    )}
+                  />
+                </DropdownMenuItem>
+              ))
+            ) : (
+              <DropdownMenuItem disabled>No clients yet</DropdownMenuItem>
+            )}
+          </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setCreateOpen(true)}>
             <Plus className="size-4" /> New client
@@ -90,7 +100,23 @@ export function Topbar({ user }: TopbarProps) {
 
       <CreateClientDialog open={createOpen} onOpenChange={setCreateOpen} />
 
-      <UserMenu user={user} />
+      <div className="flex items-center gap-3">
+        {overview ? (
+          <div className="hidden items-center gap-3 text-xs text-muted-foreground sm:flex">
+            <span className="inline-flex items-center gap-1">
+              <Zap className="size-3.5 text-emerald-400" />
+              {activeSessions} active
+            </span>
+            {attentionCount > 0 ? (
+              <span className="inline-flex items-center gap-1 text-amber-400">
+                <span className="size-2 animate-pulse rounded-full bg-amber-500" />
+                {attentionCount} attention
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+        <UserMenu user={user} />
+      </div>
     </header>
   );
 }

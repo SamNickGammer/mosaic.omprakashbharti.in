@@ -15,6 +15,10 @@ import type {
   TaskPriority,
   TaskStatus,
 } from "@/types";
+import type {
+  AgentSessionStatus,
+  AgentSessionType,
+} from "@/lib/db/schema";
 
 // ---------------------------------------------------------------------------
 // Shapes returned by the API
@@ -196,6 +200,180 @@ export function useCreateTask(projectId: string) {
   });
 }
 
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant" | "agent" | "agent_trace" | "system";
+  authorKind: "user" | "agent";
+  content: string;
+  agentId: string | null;
+  sessionId: string | null;
+  isStreamChunk: boolean;
+  createdAt: string;
+}
+
+export function useTaskMessages(taskId: string) {
+  return useQuery({
+    enabled: !!taskId,
+    queryKey: ["task-messages", taskId],
+    queryFn: () =>
+      apiGet<{ messages: ChatMessage[] }>(
+        `/api/tasks/${taskId}/messages`,
+      ).then((r) => r.messages),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Agent sessions
+// ---------------------------------------------------------------------------
+export interface SessionRow {
+  id: string;
+  name: string;
+  agentType: AgentSessionType;
+  tokenPrefix: string;
+  status: AgentSessionStatus;
+  currentTaskId: string | null;
+  lastSeenAt: string | null;
+  revoked: boolean;
+}
+
+export interface CreatedSession {
+  session: Omit<SessionRow, "revoked">;
+  token: string;
+  bootstrapPrompt: string;
+}
+
+export function useSessions(projectId: string) {
+  return useQuery({
+    enabled: !!projectId,
+    queryKey: ["sessions", projectId],
+    queryFn: () =>
+      apiGet<{ sessions: SessionRow[] }>(
+        `/api/projects/${projectId}/sessions`,
+      ).then((r) => r.sessions),
+    refetchInterval: 15000,
+  });
+}
+
+export function useCreateSession(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; agentType: AgentSessionType }) =>
+      apiSend<CreatedSession>(`/api/projects/${projectId}/sessions`, "POST", input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sessions", projectId] });
+      qc.invalidateQueries({ queryKey: ["overview"] });
+    },
+  });
+}
+
+export function useRevokeSession(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) =>
+      apiSend(`/api/sessions/${sessionId}`, "DELETE"),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sessions", projectId] });
+      qc.invalidateQueries({ queryKey: ["overview"] });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard overview (sessions + attention across all projects)
+// ---------------------------------------------------------------------------
+export interface OverviewSession {
+  id: string;
+  name: string;
+  agentType: AgentSessionType;
+  status: AgentSessionStatus;
+  currentTaskId: string | null;
+  lastSeenAt: string | null;
+  projectId: string;
+  projectName: string;
+  clientId: string;
+}
+export interface OverviewAttention {
+  taskId: string;
+  title: string;
+  attentionMessage: string | null;
+  projectId: string;
+  projectName: string;
+  clientId: string;
+}
+
+export function useOverview() {
+  return useQuery({
+    queryKey: ["overview"],
+    queryFn: () =>
+      apiGet<{ sessions: OverviewSession[]; attention: OverviewAttention[] }>(
+        "/api/overview",
+      ),
+    refetchInterval: 15000,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Single task + user replies
+// ---------------------------------------------------------------------------
+export function useTask(taskId: string) {
+  return useQuery({
+    enabled: !!taskId,
+    queryKey: ["task", taskId],
+    queryFn: () =>
+      apiGet<{ task: Task }>(`/api/tasks/${taskId}`).then((r) => r.task),
+  });
+}
+
+export function usePostTaskMessage(taskId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: string) =>
+      apiSend(`/api/tasks/${taskId}/messages`, "POST", { body }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["task-messages", taskId] });
+      qc.invalidateQueries({ queryKey: ["task", taskId] });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Direct session chat
+// ---------------------------------------------------------------------------
+export interface SessionChatMessage {
+  authorKind: "user" | "agent";
+  content: string;
+  createdAt: string;
+}
+export interface SessionChatData {
+  session: {
+    id: string;
+    name: string;
+    agentType: AgentSessionType;
+    status: AgentSessionStatus;
+    projectId: string;
+  };
+  messages: SessionChatMessage[];
+}
+
+export function useSessionChat(sessionId: string) {
+  return useQuery({
+    enabled: !!sessionId,
+    queryKey: ["session-chat", sessionId],
+    queryFn: () => apiGet<SessionChatData>(`/api/sessions-chat/${sessionId}`),
+    refetchInterval: 3000,
+  });
+}
+
+export function useSendSessionChat(sessionId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (message: string) =>
+      apiSend(`/api/sessions-chat/${sessionId}`, "POST", { message }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["session-chat", sessionId] }),
+  });
+}
+
 export function useUpdateTask(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -209,7 +387,22 @@ export function useUpdateTask(projectId: string) {
       status?: TaskStatus;
       priority?: TaskPriority;
       position?: number;
-    }) => apiSend(`/api/tasks/${id}`, "PATCH", input),
+      clearClaim?: boolean;
+      attentionMessage?: string | null;
+    }) => apiSend<{ task: Task }>(`/api/tasks/${id}`, "PATCH", input),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["tasks", projectId] });
+      qc.invalidateQueries({ queryKey: ["task", vars.id] });
+      qc.invalidateQueries({ queryKey: ["sessions", projectId] });
+      qc.invalidateQueries({ queryKey: ["overview"] });
+    },
+  });
+}
+
+export function useDeleteTask(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiSend(`/api/tasks/${id}`, "DELETE"),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks", projectId] }),
   });
 }

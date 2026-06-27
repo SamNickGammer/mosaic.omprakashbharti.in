@@ -20,7 +20,10 @@ export default async function ProjectBoardPage({
   return (
     <div className="flex h-full flex-col">
       <WorkspaceSync clientId={params.clientId} projectId={params.projectId} />
-      <ProjectHeader projectId={params.projectId} />
+      <ProjectHeader
+        clientId={params.clientId}
+        projectId={params.projectId}
+      />
       <div className="min-h-0 flex-1">
         <KanbanBoard
           clientId={params.clientId}

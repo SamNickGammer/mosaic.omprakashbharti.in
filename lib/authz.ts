@@ -1,8 +1,8 @@
 import { and, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { clients, projects, tasks } from "@/lib/db/schema";
-import type { Project, Task } from "@/lib/db/schema";
+import { agentSessions, clients, projects, tasks } from "@/lib/db/schema";
+import type { AgentSession, Project, Task } from "@/lib/db/schema";
 
 /**
  * Returns the project if it belongs to the given user (via its client),
@@ -37,4 +37,22 @@ export async function getOwnedTask(
     .where(and(eq(tasks.id, taskId), eq(clients.userId, userId)))
     .limit(1);
   return row?.task ?? null;
+}
+
+/**
+ * Returns the agent session if it belongs to the given user (via
+ * project → client), otherwise null.
+ */
+export async function getOwnedSession(
+  userId: string,
+  sessionId: string,
+): Promise<AgentSession | null> {
+  const [row] = await db
+    .select({ session: agentSessions })
+    .from(agentSessions)
+    .innerJoin(projects, eq(agentSessions.projectId, projects.id))
+    .innerJoin(clients, eq(projects.clientId, clients.id))
+    .where(and(eq(agentSessions.id, sessionId), eq(clients.userId, userId)))
+    .limit(1);
+  return row?.session ?? null;
 }
