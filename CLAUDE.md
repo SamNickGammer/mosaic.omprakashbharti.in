@@ -28,7 +28,7 @@ from one interface. Sending a task runs a **primary agent → secondary reviewer
 | Client state | `zustand` | `stores/workspace.ts` (active client/project) |
 | DB | Neon (serverless Postgres) | |
 | ORM | Drizzle | schema = source of truth in `lib/db/schema.ts` |
-| Auth | NextAuth v5 (Google, JWT) | `lib/auth.ts`, `trustHost: true` |
+| Auth | NextAuth v5 (Google + GitHub + email/password, JWT) | `lib/auth.ts`, `trustHost: true`; passwords hashed with built-in scrypt (`lib/password.ts`) |
 | Drag & drop | `@dnd-kit/*` | Kanban board |
 | Encryption | Node `crypto` AES-256-GCM | `lib/encryption.ts` |
 | AI SDK | Vercel AI SDK (`ai`) | wired in Phase 2 |
@@ -90,12 +90,16 @@ scope/verify by that id.
 ## Environment
 
 `.env.local` (gitignored). See `.env.example`. Required:
-`DATABASE_URL`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `GOOGLE_CLIENT_ID`,
-`GOOGLE_CLIENT_SECRET`, `ENCRYPTION_KEY` (`openssl rand -hex 32`).
+`DATABASE_URL`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `ENCRYPTION_KEY`
+(`openssl rand -hex 32`). Optional (OAuth): `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`,
+`GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`.
 
-To finish local auth: create a Google OAuth client and fill
-`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (redirect URI
-`http://localhost:3000/api/auth/callback/google`).
+Email/password sign-in works with **no OAuth keys** (the keyless path). To enable
+the social buttons:
+- Google: console.cloud.google.com → APIs & Services → Credentials → OAuth client
+  ID (Web) → redirect URI `http://localhost:3000/api/auth/callback/google`.
+- GitHub: github.com/settings/developers → New OAuth App → callback URL
+  `http://localhost:3000/api/auth/callback/github`.
 
 ---
 
@@ -128,7 +132,8 @@ drizzle-kit does not auto-load `.env.local`; prefix with the var or
 **Phase 1 — Foundation: ✅ complete & building.**
 - Project scaffold, Tailwind v4 + shadcn(base-ui), design system applied.
 - Drizzle schema (8 tables) pushed to Neon.
-- NextAuth v5 Google login + JWT, user upsert, route guards.
+- NextAuth v5: Google + GitHub OAuth and email/password (scrypt) login + JWT,
+  user upsert, route guards, `/api/auth/register`.
 - AES-256-GCM key encryption.
 - Sidebar/topbar shell, workspace switcher, dashboard.
 - Client CRUD, Project CRUD + agent assignment, Agent registry (encrypted).

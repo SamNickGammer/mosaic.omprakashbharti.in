@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
-import { SignInButton } from "@/components/auth/sign-in-button";
+import { AuthForm } from "@/components/auth/auth-form";
 import { Logo } from "@/components/brand/logo";
 
 export default async function LoginPage() {
@@ -31,7 +31,7 @@ export default async function LoginPage() {
           </div>
         </div>
 
-        <SignInButton />
+        <AuthForm />
 
         <p className="text-xs leading-normal text-muted-foreground">
           API keys are encrypted at rest with AES-256-GCM. Your credentials stay

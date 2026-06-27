@@ -34,6 +34,9 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   name: text("name"),
   image: text("image"),
+  // scrypt hash (salt:hash hex) for email/password sign-in. Null for OAuth-only
+  // accounts. Never logged or returned to the client.
+  passwordHash: text("password_hash"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
