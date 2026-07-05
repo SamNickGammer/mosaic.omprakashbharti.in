@@ -148,6 +148,14 @@ ROOM PROTOCOL — talking to the user and to the OTHER agents:
    the "result" — it is mirrored straight back to the asker and re-queues their
    task automatically. No extra steps.
 
+   CONNECTORS — this client's connected services (Slack, Gmail, WhatsApp, …).
+   When a task needs one (e.g. "post this to Slack"), fetch the details:
+     curl -s -H "Authorization: Bearer ${token}" "${api}/connectors"
+   → {"connectors":[{id,type,name,account,details,secret},...]}
+   "account" is the handle/email/number, "details" is how to use it, "secret" is
+   the token/password if provided. Use them from THIS machine to do the action.
+   Never print or stream a connector secret.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 4. IF YOU NEED A DECISION from the user on a TASK, raise a flag (lights up the
    dashboard), then MONITOR — do not block this terminal:

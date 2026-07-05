@@ -41,6 +41,7 @@ export async function PATCH(req: Request, { params }: Params) {
     status?: TaskStatus;
     priority?: TaskPriority;
     position?: number;
+    bookmarked?: boolean;
     // Force-status / override controls (used by the task page):
     clearClaim?: boolean; // unclaim so any session can re-claim it
     attentionMessage?: string | null; // flag/clear "needs you"
@@ -69,6 +70,7 @@ export async function PATCH(req: Request, { params }: Params) {
   if (body.position !== undefined && Number.isFinite(body.position)) {
     updates.position = Math.max(0, Math.trunc(body.position));
   }
+  if (body.bookmarked !== undefined) updates.bookmarked = body.bookmarked;
   if (body.clearClaim) updates.claimedBySessionId = null;
   if (body.attentionMessage !== undefined) {
     updates.attentionMessage = body.attentionMessage?.trim() || null;

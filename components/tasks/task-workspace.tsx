@@ -19,16 +19,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { PriorityBadge, StatusBadge } from "@/components/board/badges";
-import { MessageBubble } from "@/components/chat/message-bubble";
 import { Markdown } from "@/components/markdown";
 import { StatusDot } from "@/components/sessions/status-dot";
 import { EditTaskDialog } from "@/components/board/edit-task-dialog";
 import { cn } from "@/lib/utils";
+import { relativeTime } from "@/lib/time";
 import {
   useDeleteTask,
   usePostTaskMessage,
   useSessions,
   useTask,
+  useTaskAttachments,
   useTaskMessages,
   useUpdateTask,
   type ChatMessage,
@@ -41,19 +42,50 @@ interface Grouped {
   key: string;
   kind: "user" | "stream" | "comment";
   text: string;
+  createdAt: string;
+  sessionId: string | null;
+}
+
+function formatAbsTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 }
 
 function groupMessages(messages: ChatMessage[]): Grouped[] {
   const out: Grouped[] = [];
   for (const m of messages) {
     if (m.role === "user") {
-      out.push({ key: m.id, kind: "user", text: m.content });
+      out.push({
+        key: m.id,
+        kind: "user",
+        text: m.content,
+        createdAt: m.createdAt,
+        sessionId: null,
+      });
     } else if (m.isStreamChunk) {
       const last = out[out.length - 1];
-      if (last && last.kind === "stream") last.text += m.content;
-      else out.push({ key: m.id, kind: "stream", text: m.content });
+      // Merge consecutive stream chunks from the same session into one block.
+      if (last && last.kind === "stream" && last.sessionId === m.sessionId) {
+        last.text += m.content;
+      } else {
+        out.push({
+          key: m.id,
+          kind: "stream",
+          text: m.content,
+          createdAt: m.createdAt,
+          sessionId: m.sessionId,
+        });
+      }
     } else {
-      out.push({ key: m.id, kind: "comment", text: m.content });
+      out.push({
+        key: m.id,
+        kind: "comment",
+        text: m.content,
+        createdAt: m.createdAt,
+        sessionId: m.sessionId,
+      });
     }
   }
   return out;
@@ -72,6 +104,7 @@ export function TaskWorkspace({
   const router = useRouter();
   const { data: task = initialTask } = useTask(initialTask.id);
   const { data: messages } = useTaskMessages(initialTask.id);
+  const { data: attachments } = useTaskAttachments(initialTask.id);
   const { data: sessions } = useSessions(projectId);
   const update = useUpdateTask(projectId);
   const del = useDeleteTask(projectId);
@@ -184,9 +217,32 @@ export function TaskWorkspace({
           <h2 className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             <Paperclip className="size-3" /> Attachments
           </h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            No attachments. File upload arrives with Vercel Blob.
-          </p>
+          {attachments && attachments.length > 0 ? (
+            <ul className="mt-2 space-y-1">
+              {attachments.map((a) => (
+                <li key={a.id}>
+                  <a
+                    href={a.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-2 rounded-lg border bg-card px-2.5 py-1.5 text-sm hover:border-ring"
+                  >
+                    <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">{a.name}</span>
+                    {a.sizeBytes ? (
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {(a.sizeBytes / 1024).toFixed(0)} KB
+                      </span>
+                    ) : null}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm text-muted-foreground">
+              No attachments.
+            </p>
+          )}
         </div>
 
         {/* Force status — override the agent without posting a comment */}
@@ -341,20 +397,51 @@ export function TaskWorkspace({
               </p>
             </div>
           ) : (
-            groups.map((g) =>
-              g.kind === "user" ? (
-                <MessageBubble key={g.key} role="user" content={g.text} />
-              ) : g.kind === "comment" ? (
-                <MessageBubble
+            groups.map((g) => {
+              const isUser = g.kind === "user";
+              const author = isUser
+                ? "YOU"
+                : (g.sessionId
+                    ? sessions?.find((s) => s.id === g.sessionId)?.name
+                    : null) ??
+                  claimingSession?.name ??
+                  "AGENT";
+              return (
+                <div
                   key={g.key}
-                  role="assistant"
-                  content={g.text}
-                  agentName={claimingSession?.name}
-                />
-              ) : (
-                <StreamBlock key={g.key} text={g.text} />
-              ),
-            )
+                  className={cn(
+                    "space-y-1 border-l-2 pl-3",
+                    isUser ? "border-primary/40" : "border-emerald-500/40",
+                  )}
+                >
+                  <div className="flex flex-wrap items-baseline gap-x-2 text-xs">
+                    <span
+                      className={cn(
+                        "font-semibold uppercase",
+                        isUser ? "text-primary" : "text-emerald-500",
+                      )}
+                    >
+                      {author}
+                    </span>
+                    <span
+                      className="text-muted-foreground"
+                      title={new Date(g.createdAt).toLocaleString()}
+                    >
+                      {relativeTime(g.createdAt)} · {formatAbsTime(g.createdAt)}
+                    </span>
+                  </div>
+                  {g.kind === "stream" ? (
+                    <StreamBlock text={g.text} />
+                  ) : isUser ? (
+                    <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+                      {g.text}
+                    </p>
+                  ) : (
+                    <Markdown content={g.text} />
+                  )}
+                </div>
+              );
+            })
           )}
 
           {live ? <StreamBlock text={live} streaming /> : null}

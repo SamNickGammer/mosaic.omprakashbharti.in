@@ -50,6 +50,20 @@
       "when": 1783112475130,
       "tag": "0006_session_room_cursor",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783268306566,
+      "tag": "0007_connectors",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783271145051,
+      "tag": "0008_task_flags",
+      "breakpoints": true
     }
   ]
 }

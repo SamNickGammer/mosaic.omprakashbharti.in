@@ -2,7 +2,20 @@ import { and, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { agentSessions, clients, projects, tasks } from "@/lib/db/schema";
-import type { AgentSession, Project, Task } from "@/lib/db/schema";
+import type { AgentSession, Client, Project, Task } from "@/lib/db/schema";
+
+/** Returns the client if it belongs to the given user, otherwise null. */
+export async function getOwnedClient(
+  userId: string,
+  clientId: string,
+): Promise<Client | null> {
+  const [row] = await db
+    .select()
+    .from(clients)
+    .where(and(eq(clients.id, clientId), eq(clients.userId, userId)))
+    .limit(1);
+  return row ?? null;
+}
 
 /**
  * Returns the project if it belongs to the given user (via its client),

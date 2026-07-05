@@ -117,8 +117,8 @@ export async function GET(req: Request, { params }: Params) {
           // by a follow-up message — gives the agent continuity.
           previousResult: task.result ?? null,
           assignedToYou: task.assignedSessionId === session.id,
-          compactBefore: false,
-          clearBefore: false,
+          compactBefore: task.compactBefore,
+          clearBefore: task.clearBefore,
           files: files.map((f) => ({
             name: f.name,
             url: f.url,

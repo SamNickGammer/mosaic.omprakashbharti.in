@@ -195,6 +195,9 @@ export function useCreateTask(projectId: string) {
       instructions?: string;
       priority?: TaskPriority;
       status?: TaskStatus;
+      bookmarked?: boolean;
+      clearBefore?: boolean;
+      compactBefore?: boolean;
     }) => apiSend(`/api/projects/${projectId}/tasks`, "POST", input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks", projectId] }),
   });
@@ -351,6 +354,140 @@ export function usePostRoomMessage(projectId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Connectors (client-scoped external services agents can use)
+// ---------------------------------------------------------------------------
+export type ConnectorType =
+  | "slack"
+  | "gmail"
+  | "google"
+  | "whatsapp"
+  | "github"
+  | "custom";
+
+export interface ConnectorView {
+  id: string;
+  type: ConnectorType;
+  name: string;
+  account: string | null;
+  details: string | null;
+  hasSecret: boolean;
+  createdAt: string;
+}
+
+export interface ConnectorInput {
+  type: ConnectorType;
+  name: string;
+  account?: string;
+  details?: string;
+  secret?: string;
+}
+
+export function useConnectors(clientId: string) {
+  return useQuery({
+    enabled: !!clientId,
+    queryKey: ["connectors", clientId],
+    queryFn: () =>
+      apiGet<{ connectors: ConnectorView[] }>(
+        `/api/clients/${clientId}/connectors`,
+      ).then((r) => r.connectors),
+  });
+}
+
+export function useCreateConnector(clientId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ConnectorInput) =>
+      apiSend(`/api/clients/${clientId}/connectors`, "POST", input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["connectors", clientId] }),
+  });
+}
+
+export function useUpdateConnector(clientId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      connectorId,
+      ...input
+    }: Partial<ConnectorInput> & { connectorId: string; secret?: string | null }) =>
+      apiSend(
+        `/api/clients/${clientId}/connectors/${connectorId}`,
+        "PATCH",
+        input,
+      ),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["connectors", clientId] }),
+  });
+}
+
+export function useDeleteConnector(clientId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (connectorId: string) =>
+      apiSend(`/api/clients/${clientId}/connectors/${connectorId}`, "DELETE"),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["connectors", clientId] }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Review (tasks bookmarked for review, across all clients)
+// ---------------------------------------------------------------------------
+export interface ReviewTask {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  updatedAt: string;
+  projectId: string;
+  projectName: string;
+  clientId: string;
+  clientName: string;
+  clientColor: string | null;
+}
+
+export function useReview() {
+  return useQuery({
+    queryKey: ["review"],
+    queryFn: () =>
+      apiGet<{ tasks: ReviewTask[] }>("/api/review").then((r) => r.tasks),
+    refetchInterval: 15000,
+  });
+}
+
+export function useUnbookmark() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) =>
+      apiSend(`/api/tasks/${taskId}`, "PATCH", { bookmarked: false }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["review"] }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Task attachments
+// ---------------------------------------------------------------------------
+export interface TaskAttachment {
+  id: string;
+  name: string;
+  url: string;
+  mime: string | null;
+  sizeBytes: number | null;
+  createdAt: string;
+}
+
+export function useTaskAttachments(taskId: string) {
+  return useQuery({
+    enabled: !!taskId,
+    queryKey: ["attachments", taskId],
+    queryFn: () =>
+      apiGet<{ attachments: TaskAttachment[] }>(
+        `/api/tasks/${taskId}/attachments`,
+      ).then((r) => r.attachments),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Dashboard overview (sessions + attention across all projects)
 // ---------------------------------------------------------------------------
 export interface OverviewSession {
@@ -405,44 +542,6 @@ export function usePostTaskMessage(taskId: string) {
       qc.invalidateQueries({ queryKey: ["task-messages", taskId] });
       qc.invalidateQueries({ queryKey: ["task", taskId] });
     },
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Direct session chat
-// ---------------------------------------------------------------------------
-export interface SessionChatMessage {
-  authorKind: "user" | "agent";
-  content: string;
-  createdAt: string;
-}
-export interface SessionChatData {
-  session: {
-    id: string;
-    name: string;
-    agentType: AgentSessionType;
-    status: AgentSessionStatus;
-    projectId: string;
-  };
-  messages: SessionChatMessage[];
-}
-
-export function useSessionChat(sessionId: string) {
-  return useQuery({
-    enabled: !!sessionId,
-    queryKey: ["session-chat", sessionId],
-    queryFn: () => apiGet<SessionChatData>(`/api/sessions-chat/${sessionId}`),
-    refetchInterval: 3000,
-  });
-}
-
-export function useSendSessionChat(sessionId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (message: string) =>
-      apiSend(`/api/sessions-chat/${sessionId}`, "POST", { message }),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["session-chat", sessionId] }),
   });
 }
 

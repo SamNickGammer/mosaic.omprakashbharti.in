@@ -40,6 +40,13 @@ export type AgentSessionStatus =
   | "needs_attention"
   | "offline";
 export type SessionAuthorKind = "user" | "agent";
+export type ConnectorType =
+  | "slack"
+  | "gmail"
+  | "google"
+  | "whatsapp"
+  | "github"
+  | "custom";
 
 // ---------------------------------------------------------------------------
 // users
@@ -145,6 +152,11 @@ export const tasks = pgTable("tasks", {
   status: text("status").$type<TaskStatus>().default("backlog").notNull(),
   priority: text("priority").$type<TaskPriority>().default("medium").notNull(),
   position: integer("position").default(0).notNull(),
+  // "Bookmark for review" — surfaced on the Review page.
+  bookmarked: boolean("bookmarked").default(false).notNull(),
+  // "Before agent starts" — the agent runs /clear or /compact before this task.
+  clearBefore: boolean("clear_before").default(false).notNull(),
+  compactBefore: boolean("compact_before").default(false).notNull(),
   // Set when a live session claims the task (first-come-first-served).
   claimedBySessionId: uuid("claimed_by_session_id").references(
     () => agentSessions.id,
@@ -332,6 +344,35 @@ export const roomMessages = pgTable("room_messages", {
 }));
 
 // ---------------------------------------------------------------------------
+// connectors (client-scoped external service credentials the agents can use)
+// ---------------------------------------------------------------------------
+// A client (e.g. SpinQuest) connects services — Slack, Gmail, WhatsApp — and
+// stores the handle/account plus optional instructions and an encrypted secret.
+// Agents on that client's projects fetch these to act (e.g. send a Slack msg).
+export const connectors = pgTable("connectors", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  type: text("type").$type<ConnectorType>().notNull(),
+  name: text("name").notNull(),
+  // The identifier the client provides (Slack workspace/handle, Gmail address,
+  // WhatsApp number, …) — not secret, shown in the UI and handed to agents.
+  account: text("account"),
+  // Free-text instructions / extra non-secret config for the agent.
+  details: text("details"),
+  // Optional secret (token / app password), AES-256-GCM. Never returned raw to
+  // the browser (masked); decrypted only for the agent webhook.
+  secretEncrypted: text("secret_encrypted"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// ---------------------------------------------------------------------------
 // Relations
 // ---------------------------------------------------------------------------
 export const usersRelations = relations(users, ({ many }) => ({
@@ -342,6 +383,14 @@ export const usersRelations = relations(users, ({ many }) => ({
 export const clientsRelations = relations(clients, ({ one, many }) => ({
   user: one(users, { fields: [clients.userId], references: [users.id] }),
   projects: many(projects),
+  connectors: many(connectors),
+}));
+
+export const connectorsRelations = relations(connectors, ({ one }) => ({
+  client: one(clients, {
+    fields: [connectors.clientId],
+    references: [clients.id],
+  }),
 }));
 
 export const agentAccountsRelations = relations(
@@ -490,3 +539,5 @@ export type SessionMessage = typeof sessionMessages.$inferSelect;
 export type NewSessionMessage = typeof sessionMessages.$inferInsert;
 export type RoomMessage = typeof roomMessages.$inferSelect;
 export type NewRoomMessage = typeof roomMessages.$inferInsert;
+export type Connector = typeof connectors.$inferSelect;
+export type NewConnector = typeof connectors.$inferInsert;

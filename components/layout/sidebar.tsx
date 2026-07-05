@@ -4,11 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  Bookmark,
   ChevronDown,
   ChevronRight,
   FolderKanban,
   LayoutDashboard,
   Loader2,
+  Plug,
   Plus,
   Settings,
 } from "lucide-react";
@@ -101,6 +103,18 @@ export function Sidebar() {
       </ScrollArea>
 
       <div className="border-t p-2">
+        <SidebarLink
+          href="/review"
+          active={pathname.startsWith("/review")}
+          icon={<Bookmark className="size-4" />}
+          label="Review"
+        />
+        <SidebarLink
+          href="/connectors"
+          active={pathname.startsWith("/connectors")}
+          icon={<Plug className="size-4" />}
+          label="Connectors"
+        />
         <SidebarLink
           href="/settings/agents"
           active={pathname.startsWith("/settings")}

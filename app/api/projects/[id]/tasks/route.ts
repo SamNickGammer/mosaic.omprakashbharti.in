@@ -46,6 +46,9 @@ export async function POST(req: Request, { params }: Params) {
     instructions?: string;
     status?: TaskStatus;
     priority?: TaskPriority;
+    bookmarked?: boolean;
+    clearBefore?: boolean;
+    compactBefore?: boolean;
   };
   try {
     body = await req.json();
@@ -76,6 +79,9 @@ export async function POST(req: Request, { params }: Params) {
       status,
       priority,
       position: existing.length,
+      bookmarked: body.bookmarked === true,
+      clearBefore: body.clearBefore === true,
+      compactBefore: body.compactBefore === true,
     })
     .returning();
 
