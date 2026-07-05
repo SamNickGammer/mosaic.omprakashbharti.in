@@ -22,6 +22,34 @@
       "when": 1782583933364,
       "tag": "0002_agent_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783108004412,
+      "tag": "0003_session_rooms",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783110648463,
+      "tag": "0004_task_origin_session",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783112115029,
+      "tag": "0005_task_ask_callback",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783112475130,
+      "tag": "0006_session_room_cursor",
+      "breakpoints": true
     }
   ]
 }

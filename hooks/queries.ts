@@ -229,6 +229,7 @@ export interface SessionRow {
   id: string;
   name: string;
   agentType: AgentSessionType;
+  isDefault: boolean;
   tokenPrefix: string;
   status: AgentSessionStatus;
   currentTaskId: string | null;
@@ -257,10 +258,15 @@ export function useSessions(projectId: string) {
 export function useCreateSession(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; agentType: AgentSessionType }) =>
+    mutationFn: (input: {
+      name: string;
+      agentType: AgentSessionType;
+      makeDefault?: boolean;
+    }) =>
       apiSend<CreatedSession>(`/api/projects/${projectId}/sessions`, "POST", input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sessions", projectId] });
+      qc.invalidateQueries({ queryKey: ["room", projectId] });
       qc.invalidateQueries({ queryKey: ["overview"] });
     },
   });
@@ -270,10 +276,76 @@ export function useRevokeSession(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (sessionId: string) =>
-      apiSend(`/api/sessions/${sessionId}`, "DELETE"),
+      apiSend(`/api/projects/${projectId}/sessions/${sessionId}`, "DELETE"),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sessions", projectId] });
+      qc.invalidateQueries({ queryKey: ["room", projectId] });
       qc.invalidateQueries({ queryKey: ["overview"] });
+    },
+  });
+}
+
+export function useSetSessionDefault(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) =>
+      apiSend(`/api/projects/${projectId}/sessions/${sessionId}`, "PATCH", {
+        makeDefault: true,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sessions", projectId] });
+      qc.invalidateQueries({ queryKey: ["room", projectId] });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Project room (shared multi-agent chat + debate)
+// ---------------------------------------------------------------------------
+export interface RoomParticipant {
+  id: string;
+  name: string;
+  agentType: AgentSessionType;
+  status: AgentSessionStatus;
+  isDefault: boolean;
+  lastSeenAt: string | null;
+}
+
+export interface RoomMessageView {
+  id: string;
+  authorKind: "user" | "agent";
+  authorSessionId: string | null;
+  authorName: string | null;
+  agentType: AgentSessionType | null;
+  mentionSessionId: string | null;
+  mentionName: string | null;
+  content: string;
+  createdAt: number;
+}
+
+export interface RoomData {
+  projectId: string;
+  defaultSessionId: string | null;
+  participants: RoomParticipant[];
+  messages: RoomMessageView[];
+}
+
+export function useRoom(projectId: string) {
+  return useQuery({
+    enabled: !!projectId,
+    queryKey: ["room", projectId],
+    queryFn: () => apiGet<RoomData>(`/api/projects/${projectId}/room`),
+    refetchInterval: 3000,
+  });
+}
+
+export function usePostRoomMessage(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { content: string; to?: string | null }) =>
+      apiSend(`/api/projects/${projectId}/room`, "POST", input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["room", projectId] });
     },
   });
 }

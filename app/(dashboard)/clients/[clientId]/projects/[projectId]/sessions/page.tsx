@@ -4,7 +4,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { getSessionUserId } from "@/lib/api";
 import { getOwnedProject } from "@/lib/authz";
-import { SessionsManager } from "@/components/sessions/sessions-manager";
+import { RoomView } from "@/components/sessions/room-view";
 import { WorkspaceSync } from "@/components/layout/workspace-sync";
 
 export default async function SessionsPage({
@@ -31,8 +31,8 @@ export default async function SessionsPage({
           <ArrowLeft className="size-4" /> Board
         </Link>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto">
-        <SessionsManager projectId={params.projectId} />
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <RoomView projectId={params.projectId} />
       </div>
     </div>
   );

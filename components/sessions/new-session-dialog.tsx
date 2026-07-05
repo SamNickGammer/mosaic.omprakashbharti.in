@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactElement } from "react";
-import { Check, Copy, TriangleAlert } from "lucide-react";
+import { Check, CircleCheck, Copy, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -58,6 +58,14 @@ export function NewSessionDialog({
     setError(null);
   }
 
+  // Close via a button: base-ui doesn't re-fire onOpenChange when we flip the
+  // controlled `open` prop ourselves, so reset here too or the next open shows
+  // the stale "created" screen.
+  function close() {
+    setOpen(false);
+    reset();
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return setError("Name is required");
@@ -81,18 +89,19 @@ export function NewSessionDialog({
       open={open}
       onOpenChange={(v) => {
         setOpen(v);
-        if (!v) reset();
+        // Always start fresh on open (and clean up on close).
+        reset();
       }}
     >
       {trigger ? <DialogTrigger render={trigger} /> : null}
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-hidden sm:max-w-xl">
         {!created ? (
           <form onSubmit={onSubmit}>
             <DialogHeader>
-              <DialogTitle>New session</DialogTitle>
+              <DialogTitle>Add an agent</DialogTitle>
               <DialogDescription>
-                Connect a live AI process running inside this project&apos;s
-                folder.
+                Connect a live AI process to this project&apos;s room. It shares
+                the task queue and chat with the other agents here.
               </DialogDescription>
             </DialogHeader>
 
@@ -136,11 +145,7 @@ export function NewSessionDialog({
             </div>
 
             <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setOpen(false)}
-              >
+              <Button type="button" variant="outline" onClick={close}>
                 Cancel
               </Button>
               <Button type="submit" disabled={create.isPending}>
@@ -151,45 +156,64 @@ export function NewSessionDialog({
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>Session created ✓</DialogTitle>
+              <DialogTitle className="flex items-center gap-2">
+                <CircleCheck className="size-5 text-emerald-500" />
+                {created.session.name} is connected
+              </DialogTitle>
               <DialogDescription>
-                Paste this bootstrap prompt into a {AGENT_TYPE_LABEL[agentType]}{" "}
-                session running inside the project folder.
+                Paste the bootstrap prompt below into a fresh{" "}
+                {AGENT_TYPE_LABEL[agentType]} session running inside this
+                project&apos;s folder. The agent then self-drives off this room.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-3 py-4">
-              <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-400">
+            <div className="min-w-0 space-y-4 py-4">
+              <div className="flex min-w-0 items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-500">
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-                <span>
-                  Save this now — the token is shown only once. Token prefix:{" "}
-                  <span className="font-mono">{created.session.tokenPrefix}…</span>
-                </span>
+                <div className="min-w-0 space-y-1">
+                  <p className="font-medium">
+                    Copy this now — the token is shown only once.
+                  </p>
+                  <p className="text-xs text-amber-500/80">
+                    Token prefix{" "}
+                    <code className="rounded bg-amber-500/15 px-1 py-0.5 font-mono">
+                      {created.session.tokenPrefix}…
+                    </code>
+                  </p>
+                </div>
               </div>
 
-              <div className="relative">
-                <pre className="max-h-72 overflow-auto rounded-lg border bg-muted/50 p-3 pr-12 font-mono text-xs leading-relaxed text-muted-foreground">
+              <div className="min-w-0 overflow-hidden rounded-xl border bg-card">
+                <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-3 py-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Bootstrap prompt
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={copied ? "outline" : "default"}
+                    className="h-7 gap-1.5 px-2.5 text-xs"
+                    onClick={copyPrompt}
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="size-3.5" /> Copied
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="size-3.5" /> Copy prompt
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <pre className="no-scrollbar max-h-[22rem] min-w-0 overflow-y-auto overflow-x-hidden whitespace-pre-wrap [overflow-wrap:anywhere] bg-background/40 p-3.5 font-mono text-[11px] leading-relaxed text-muted-foreground">
                   {created.bootstrapPrompt}
                 </pre>
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="outline"
-                  aria-label="Copy bootstrap prompt"
-                  className="absolute right-2 top-2"
-                  onClick={copyPrompt}
-                >
-                  {copied ? (
-                    <Check className="size-4" />
-                  ) : (
-                    <Copy className="size-4" />
-                  )}
-                </Button>
               </div>
             </div>
 
             <DialogFooter>
-              <Button type="button" onClick={() => setOpen(false)}>
+              <Button type="button" onClick={close}>
                 Done
               </Button>
             </DialogFooter>

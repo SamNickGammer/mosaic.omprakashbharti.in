@@ -86,6 +86,19 @@ export function TaskWorkspace({
     [sessions, task.claimedBySessionId],
   );
 
+  // Who added this task: an agent (via /room/ask) or the user (from the board).
+  const addedBy = useMemo(() => {
+    if (!task.createdBySessionId) return "You";
+    return sessions?.find((s) => s.id === task.createdBySessionId)?.name ?? "An agent";
+  }, [sessions, task.createdBySessionId]);
+  const assignedTo = useMemo(
+    () =>
+      task.assignedSessionId
+        ? sessions?.find((s) => s.id === task.assignedSessionId)?.name ?? null
+        : null,
+    [sessions, task.assignedSessionId],
+  );
+
   // Live SSE stream of session output for this task.
   useEffect(() => {
     const es = new EventSource(`/api/tasks/${initialTask.id}/stream`);
@@ -145,6 +158,18 @@ export function TaskWorkspace({
         <h1 className="text-2xl font-bold leading-tight tracking-tight">
           {task.title}
         </h1>
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>
+            Added by <span className="text-foreground">{addedBy}</span>
+          </span>
+          {assignedTo ? (
+            <span>
+              · Assigned to{" "}
+              <span className="text-foreground">{assignedTo}</span>
+            </span>
+          ) : null}
+        </div>
 
         <div>
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">

@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import {
   boolean,
+  index,
   integer,
   pgTable,
   primaryKey,
@@ -149,6 +150,27 @@ export const tasks = pgTable("tasks", {
     () => agentSessions.id,
     { onDelete: "set null" },
   ),
+  // Optional: aim a task at one participant. Null = the default (or any) claims.
+  assignedSessionId: uuid("assigned_session_id").references(
+    () => agentSessions.id,
+    { onDelete: "set null" },
+  ),
+  // Set when one agent dispatched this task to another ("ask"): the asker to
+  // report the result back to (mirrored into the room chat on completion).
+  originSessionId: uuid("origin_session_id").references(
+    () => agentSessions.id,
+    { onDelete: "set null" },
+  ),
+  // For an "ask" task: the task the asker was working on. When the ask
+  // completes, that origin task is re-queued with the reply so the asker
+  // re-runs and folds it in. Self-ref, so declared as a plain column below.
+  originTaskId: uuid("origin_task_id"),
+  // Who created this task: an agent session (via /room/ask), or null = the user
+  // (created from the board). Surfaces "added by" in the UI.
+  createdBySessionId: uuid("created_by_session_id").references(
+    () => agentSessions.id,
+    { onDelete: "set null" },
+  ),
   // Set when a session raises an attention flag; cleared on resume.
   attentionMessage: text("attention_message"),
   // One-line summary set when a session marks the task complete.
@@ -218,6 +240,9 @@ export const agentSessions = pgTable("agent_sessions", {
     .references(() => projects.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   agentType: text("agent_type").$type<AgentSessionType>().notNull(),
+  // Exactly one participant per project room is the default: it fields
+  // unaddressed user questions and leads cross-agent debates.
+  isDefault: boolean("is_default").default(false).notNull(),
   // 40-char random hex bearer token, stored plain (already high-entropy).
   // Nullable so revoke can null it out (NULLs are exempt from UNIQUE).
   token: text("token").unique(),
@@ -228,6 +253,10 @@ export const agentSessions = pgTable("agent_sessions", {
     .notNull(),
   currentTaskId: uuid("current_task_id"),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  // Cursor for the unified inbox: room messages with created_at after this have
+  // not yet been delivered to this session via /next?inbox=1. Set to "now" on
+  // first inbox poll so a fresh agent doesn't replay old chat.
+  roomCursorAt: timestamp("room_cursor_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -267,6 +296,42 @@ export const sessionMessages = pgTable("session_messages", {
 });
 
 // ---------------------------------------------------------------------------
+// room_messages (the shared project "room" chat + cross-agent debate bus)
+// ---------------------------------------------------------------------------
+// One conversation per project. Every participant (agent session) and the user
+// post here; each message carries who authored it and, optionally, who it is
+// addressed to. Non-default agents only "wake" for messages addressed to them;
+// the default agent also fields unaddressed user questions.
+export const roomMessages = pgTable("room_messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  authorKind: text("author_kind").$type<SessionAuthorKind>().notNull(),
+  // Which participant authored this (null when authorKind === "user").
+  authorSessionId: uuid("author_session_id").references(
+    () => agentSessions.id,
+    { onDelete: "set null" },
+  ),
+  // Directed message: the participant this is addressed to. Null = addressed to
+  // the room's default agent (user questions) / a broadcast.
+  mentionSessionId: uuid("mention_session_id").references(
+    () => agentSessions.id,
+    { onDelete: "set null" },
+  ),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+}, (t) => ({
+  projectCreatedIdx: index("room_messages_project_created_idx").on(
+    t.projectId,
+    t.createdAt,
+  ),
+  mentionIdx: index("room_messages_mention_idx").on(t.mentionSessionId),
+}));
+
+// ---------------------------------------------------------------------------
 // Relations
 // ---------------------------------------------------------------------------
 export const usersRelations = relations(users, ({ many }) => ({
@@ -302,6 +367,7 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   projectAgents: many(projectAgents),
   tasks: many(tasks),
   sessions: many(agentSessions),
+  roomMessages: many(roomMessages),
 }));
 
 export const projectAgentsRelations = relations(projectAgents, ({ one }) => ({
@@ -359,6 +425,23 @@ export const sessionMessagesRelations = relations(
   }),
 );
 
+export const roomMessagesRelations = relations(roomMessages, ({ one }) => ({
+  project: one(projects, {
+    fields: [roomMessages.projectId],
+    references: [projects.id],
+  }),
+  author: one(agentSessions, {
+    fields: [roomMessages.authorSessionId],
+    references: [agentSessions.id],
+    relationName: "room_message_author",
+  }),
+  mention: one(agentSessions, {
+    fields: [roomMessages.mentionSessionId],
+    references: [agentSessions.id],
+    relationName: "room_message_mention",
+  }),
+}));
+
 export const taskMessagesRelations = relations(
   taskMessages,
   ({ one, many }) => ({
@@ -405,3 +488,5 @@ export type TaskAttachment = typeof taskAttachments.$inferSelect;
 export type NewTaskAttachment = typeof taskAttachments.$inferInsert;
 export type SessionMessage = typeof sessionMessages.$inferSelect;
 export type NewSessionMessage = typeof sessionMessages.$inferInsert;
+export type RoomMessage = typeof roomMessages.$inferSelect;
+export type NewRoomMessage = typeof roomMessages.$inferInsert;

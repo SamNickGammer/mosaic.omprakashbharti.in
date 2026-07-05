@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { agentSessions, tasks } from "@/lib/db/schema";
+import { agentSessions, taskMessages, tasks } from "@/lib/db/schema";
+import { postRoomMessage } from "@/lib/room";
 import { loadTaskForSession, verifySessionToken } from "@/lib/session-auth";
 import { broadcast } from "@/lib/sse/broadcast";
 
@@ -39,6 +40,44 @@ export async function POST(req: Request, { params }: Params) {
     sessionName: session.name,
     result: result ?? "",
   });
+
+  // If this task was an agent-to-agent "ask", mirror the answer back into the
+  // room chat, attributed from the completer to the asker.
+  if (task.originSessionId && task.originSessionId !== session.id) {
+    await postRoomMessage({
+      projectId: session.projectId,
+      authorKind: "agent",
+      authorSessionId: session.id,
+      mentionSessionId: task.originSessionId,
+      content: result ?? "(no result provided)",
+    });
+  }
+
+  // Async callback: if the ask was spawned from another task, attach the reply
+  // to that origin task and re-queue it to the asker — so it re-runs, remembers
+  // what it was doing, folds in the reply, and posts the final answer. This is
+  // what makes "finish your own work now, get re-woken when the peer replies"
+  // possible instead of blocking.
+  if (task.originTaskId && task.originSessionId) {
+    await db.insert(taskMessages).values({
+      taskId: task.originTaskId,
+      role: "agent",
+      sessionId: session.id,
+      content: `${session.name} replied to your ask:\n\n${result ?? "(no result provided)"}`,
+      isStreamChunk: false,
+    });
+    await db
+      .update(tasks)
+      .set({
+        status: "in_progress",
+        claimedBySessionId: null,
+        assignedSessionId: task.originSessionId,
+        attentionMessage: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(tasks.id, task.originTaskId));
+    broadcast(task.originTaskId, "status", { status: "in_progress" });
+  }
 
   return Response.json({ ok: true });
 }

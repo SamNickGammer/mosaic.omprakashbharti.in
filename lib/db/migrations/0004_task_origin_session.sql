@@ -1,0 +1,2 @@
+ALTER TABLE "tasks" ADD COLUMN "origin_session_id" uuid;--> statement-breakpoint
+ALTER TABLE "tasks" ADD CONSTRAINT "tasks_origin_session_id_agent_sessions_id_fk" FOREIGN KEY ("origin_session_id") REFERENCES "public"."agent_sessions"("id") ON DELETE set null ON UPDATE no action;

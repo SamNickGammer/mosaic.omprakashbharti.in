@@ -201,6 +201,14 @@
     -webkit-text-fill-color: transparent;
     color: transparent;
   }
+  /* Scrolls, but hides the scrollbar chrome (Firefox, IE, WebKit). */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* ───────────────────────── Streaming pulse (design system §9) ───────────────────────── */
